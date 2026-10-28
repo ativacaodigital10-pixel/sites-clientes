@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaurante Ponte Velha | Morretes desde 1991</title>
+<meta name="description" content="Restaurante Ponte Velha, em Morretes (PR), desde 1991. Barreado, frutos do mar e vista para o rio e o Pico do Marumbi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --azul:#1f4e8c; --azul-esc:#12305a; --amarelo:#f5c518; --creme:#fbf7ec;
+    --texto:#1d2733; --suave:#5b6675; --branco:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--texto);background:var(--creme);line-height:1.6}
+  h1,h2,h3{font-family:Fraunces,Georgia,serif;line-height:1.15}
+  a{color:inherit}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  header{position:sticky;top:0;z-index:10;background:rgba(18,48,90,.96);color:var(--branco)}
+  header .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .logo{font-family:Fraunces,serif;font-weight:800;font-size:1.25rem;text-decoration:none}
+  .logo span{color:var(--amarelo)}
+  nav a{text-decoration:none;margin-left:18px;font-size:.92rem;opacity:.9}
+  nav a:hover{opacity:1;color:var(--amarelo)}
+  @media (max-width:640px){nav{display:none}}
+
+  .hero{background:linear-gradient(160deg,var(--azul-esc),var(--azul));color:var(--branco);padding:88px 0 0;overflow:hidden}
+  .selo{display:inline-block;background:var(--amarelo);color:var(--azul-esc);font-weight:600;font-size:.8rem;padding:6px 12px;border-radius:99px;letter-spacing:.04em;text-transform:uppercase}
+  .hero h1{font-size:clamp(2.4rem,7vw,4.4rem);margin:18px 0 14px;max-width:14ch}
+  .hero p{font-size:1.12rem;max-width:46ch;opacity:.92}
+  .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+  .btn{display:inline-block;padding:13px 22px;border-radius:10px;font-weight:600;text-decoration:none}
+  .btn-am{background:var(--amarelo);color:var(--azul-esc)}
+  .btn-cl{border:1.5px solid rgba(255,255,255,.6);color:var(--branco)}
+  .paisagem{display:block;width:100%;height:auto;margin-top:56px}
+
+  section{padding:72px 0}
+  .tit{font-size:clamp(1.8rem,4vw,2.5rem);margin-bottom:12px;color:var(--azul-esc)}
+  .sub{color:var(--suave);max-width:56ch;margin-bottom:36px}
+
+  .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .card{background:var(--branco);border-radius:14px;padding:22px;box-shadow:0 1px 3px rgba(18,48,90,.08)}
+  .card h3{font-size:1.15rem;color:var(--azul);margin-bottom:6px}
+  .card p{color:var(--suave);font-size:.95rem}
+  .ico{width:40px;height:40px;border-radius:10px;background:#fff4c7;display:grid;place-items:center;margin-bottom:12px;font-size:1.3rem}
+
+  .cardapio{background:var(--branco)}
+  .pratos{list-style:none;display:grid;gap:0 40px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .pratos li{padding:16px 0;border-bottom:1px dashed #d9dee6}
+  .pratos b{display:block;font-family:Fraunces,serif;font-size:1.1rem;color:var(--azul-esc)}
+  .pratos span{color:var(--suave);font-size:.93rem}
+
+  .publicos{display:flex;flex-wrap:wrap;gap:10px}
+  .publicos span{background:var(--branco);border:1px solid #dfe5ee;border-radius:99px;padding:8px 14px;font-size:.92rem}
+
+  .destaque{background:var(--azul-esc);color:var(--branco);border-radius:18px;padding:40px;display:grid;gap:24px;grid-template-columns:1fr auto;align-items:center}
+  .destaque h2{font-size:clamp(1.6rem,3.5vw,2.2rem)}
+  .destaque p{opacity:.88;margin-top:8px}
+  @media (max-width:700px){.destaque{grid-template-columns:1fr;padding:28px}}
+
+  footer{background:#0c2140;color:#c9d3e2;padding:36px 0;font-size:.9rem}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between}
+  footer b{color:var(--branco)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="#">Ponte <span>Velha</span></a>
+    <nav>
+      <a href="#casa">A casa</a>
+      <a href="#cardapio">Cardápio</a>
+      <a href="#grupos">Grupos</a>
+      <a href="#chegar">Como chegar</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="selo">Morretes · desde 1991</span>
+    <h1>Sabor do litoral com vista para o rio</h1>
+    <p>Barreado, frutos do mar e o melhor da cozinha paranaense, de frente para o rio e com o Pico do Marumbi ao fundo.</p>
+    <div class="cta">
+      <a class="btn btn-am" href="#chegar">Como chegar</a>
+      <a class="btn btn-cl" href="#cardapio">Ver destaques do cardápio</a>
+    </div>
+  </div>
+  <svg class="paisagem" viewBox="0 0 1440 220" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 150 L180 70 L300 120 L470 30 L640 110 L760 80 L900 130 L1080 50 L1260 120 L1440 90 L1440 220 L0 220Z" fill="#163d6e"/>
+    <path d="M0 170 Q360 140 720 170 T1440 170 L1440 220 L0 220Z" fill="#2a64a8"/>
+    <path d="M200 175 Q420 100 640 175" fill="none" stroke="#f5c518" stroke-width="6"/>
+    <path d="M0 195 Q360 180 720 195 T1440 195 L1440 220 L0 220Z" fill="#fbf7ec"/>
+  </svg>
+</section>
+
+<section id="casa">
+  <div class="wrap">
+    <h2 class="tit">Mais de 30 anos recebendo bem</h2>
+    <p class="sub">Uma casa tradicional de Morretes, com equipe experiente e estrutura pensada para receber todo mundo com conforto.</p>
+    <div class="grid">
+      <div class="card"><div class="ico">🏞️</div><h3>Vista privilegiada</h3><p>Ambiente de frente para o rio, com o Pico do Marumbi no horizonte.</p></div>
+      <div class="card"><div class="ico">❄️</div><h3>Climatizado</h3><p>Conforto em qualquer estação, mesmo nos dias mais quentes do litoral.</p></div>
+      <div class="card"><div class="ico">♿</div><h3>Acessível</h3><p>Estrutura preparada para receber pessoas com mobilidade reduzida.</p></div>
+      <div class="card"><div class="ico">🐾</div><h3>Pet-friendly</h3><p>Seu pet também é bem-vindo para aproveitar o passeio.</p></div>
+      <div class="card"><div class="ico">🌱</div><h3>Sustentabilidade</h3><p>Cuidado com o meio ambiente que faz parte da nossa rotina.</p></div>
+      <div class="card"><div class="ico">🏅</div><h3>Ouro em Qualidade</h3><p>Selo Ouro Qualidade no Turismo PR/Sebrae 2019.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="cardapio" class="cardapio">
+  <div class="wrap">
+    <h2 class="tit">Destaques do cardápio</h2>
+    <p class="sub">Os pratos que fazem a fama da casa.</p>
+    <ul class="pratos">
+      <li><b>Barreado</b><span>O prato símbolo do litoral paranaense, preparado do jeito tradicional.</span></li>
+      <li><b>Linguado Ponte Velha</b><span>A receita que leva o nome da casa.</span></li>
+      <li><b>Peixe ou camarão à romana</b><span>Empanado leve e crocante.</span></li>
+      <li><b>Camarão à grega</b><span>Clássico que agrada a mesa toda.</span></li>
+      <li><b>Mignon à grega ou à parmegiana</b><span>Para quem prefere carne.</span></li>
+      <li><b>Casquinha de siri e ceviche</b><span>Entradas frescas do litoral.</span></li>
+      <li><b>Petit gâteau</b><span>Para fechar com chave de ouro.</span></li>
+      <li><b>Suco de maracujá e cachaça artesanal</b><span>Sabores da região para acompanhar.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="grupos">
+  <div class="wrap">
+    <h2 class="tit">Recebemos todos os grupos</h2>
+    <p class="sub">Estrutura e equipe preparadas para quem vem de trem, de trilha, de moto ou em excursão.</p>
+    <div class="publicos">
+      <span>Excursões</span><span>Passageiros do trem</span><span>Trilheiros</span><span>Ciclistas</span>
+      <span>Motociclistas</span><span>Turistas estrangeiros</span><span>Escolas</span><span>Grupos religiosos</span><span>Melhor idade</span>
+    </div>
+  </div>
+</section>
+
+<section id="chegar">
+  <div class="wrap">
+    <div class="destaque">
+      <div>
+        <h2>Venha nos visitar em Morretes</h2>
+        <p>Não trabalhamos com reservas: o atendimento é por ordem de chegada. Você será sempre bem-vindo(a)!</p>
+      </div>
+      <a class="btn btn-am" href="https://www.google.com/maps/search/?api=1&query=Restaurante+Ponte+Velha+Morretes" target="_blank" rel="noopener">Abrir no Google Maps</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div><b>Restaurante Ponte Velha</b> · Morretes, Paraná · desde 1991</div>
+    <div>Site por VGA Gestão de Negócios</div>
+  </div>
+</footer>
+
+</body>
+</html>
