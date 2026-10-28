@@ -34,6 +34,15 @@ export function segundaDaSemana(data) {
   return deUTC(dt);
 }
 
+// "AAAA-MM-DDTHH:MM" no horário de Brasília.
+export function agoraSP(agora = new Date()) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(agora).map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 export function semanaAtual(agora = new Date()) {
   return segundaDaSemana(hojeSP(agora));
 }

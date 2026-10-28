@@ -47,7 +47,7 @@ export function criarGerador(db, { pesquisar = pesquisarTendencias, gerar = gera
         salvarEstrategia(db, estrategia);
         // Pautas ainda não aprovadas da versão anterior deixam de existir; as aprovadas ficam guardadas.
         db.prepare(`
-          DELETE FROM itens_estado WHERE semana = ? AND (status IS NULL OR status <> 'aprovado')
+          DELETE FROM itens_estado WHERE semana = ? AND (status IS NULL OR status NOT IN ('aprovado', 'agendado', 'publicado'))
             AND usuario_id IN (SELECT id FROM usuarios WHERE nicho = ?)
         `).run(semana, nichoId);
         db.exec("COMMIT");

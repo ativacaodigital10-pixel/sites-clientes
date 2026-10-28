@@ -6,7 +6,9 @@ const menu = document.getElementById("menu");
 const DIAS = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
 const NOMES_DIAS = { seg: "Segunda", ter: "Terça", qua: "Quarta", qui: "Quinta", sex: "Sexta", sab: "Sábado", dom: "Domingo" };
 const FORMATOS = { reels: "Reels", carrossel: "Carrossel", feed: "Feed", stories: "Stories" };
-const STATUS = { falta_material: "Falta enviar", para_aprovar: "Para aprovar", ajuste: "Em ajuste", aprovado: "Aprovado" };
+const STATUS = { falta_material: "Falta enviar", para_aprovar: "Para aprovar", ajuste: "Em ajuste", aprovado: "Aprovado", agendado: "Agendado", publicado: "Publicado" };
+const TRAVADOS = ["aprovado", "agendado", "publicado"];
+const NOMES_DIAS_MIN = { seg: "segunda", ter: "terça", qua: "quarta", qui: "quinta", sex: "sexta", sab: "sábado", dom: "domingo" };
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
 const estado = {
@@ -19,7 +21,16 @@ const estado = {
   ultimaAnalise: null,
   cal: { so_meu: true },
   painel: "estrategias",
+  irPara: null, // pauta para abrir ao entrar na Semana (vindo do Início ou dos Insights)
+  insights: { mes: null, fonte: "meta" },
+  adminInsights: { usuario: null, mes: null, fonte: "meta" },
 };
+
+// Parâmetros depois do "?" no endereço (ex.: #/semana?item=p3).
+function parametros() {
+  const q = location.hash.split("?")[1] || "";
+  return Object.fromEntries(new URLSearchParams(q));
+}
 
 // ---------- utilidades ----------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -39,7 +50,9 @@ const icone = {
   enviar: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/></svg>',
   calendario: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="15" r="2"/></svg>',
   conta: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
-  painel: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
+  painel: '<svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>',
+  inicio: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>',
+  insights: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   esq: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
   dir: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
   nuvem: '<svg viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.5-9.97A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9"/><path d="M12 12v9M9 15l3-3 3 3"/></svg>',
@@ -115,10 +128,11 @@ function abrirJanela(html) {
 function topo(extra = "") {
   const n = nichoDoUsuario();
   return `<header class="topo">
-    <a class="logo" href="#/semana">VGA<span>.</span><small>ÁREA DO CLIENTE</small></a>
+    <a class="logo" href="#/inicio">VGA<span>.</span><small>ÁREA DO CLIENTE</small></a>
     <div class="espaco"></div>
     ${extra}
     ${n ? `<a class="chip-nicho" href="#/nicho" title="Trocar nicho">${n.icone} ${esc(n.curto)}</a>` : ""}
+    ${estado.eu ? `<a class="botao-conta" href="#/conta" aria-label="Sua conta" title="Conta">${icone.conta}</a>` : ""}
   </header>`;
 }
 
@@ -131,12 +145,15 @@ function desenharMenu(rota) {
   document.body.classList.remove("sem-menu");
   menu.hidden = false;
   const pend = estado.dados?.pendencias;
+  const admin = estado.eu.usuario.papel === "admin";
+  // No celular: Início, Semana, Enviar, Calendário e Insights. A equipe VGA troca "Enviar" pelo Painel.
   const itens = [
+    ["inicio", "Início", 0],
     ["semana", "Semana", pend ? pend.para_aprovar : 0],
-    ["enviar", "Enviar", 0],
+    ...(admin ? [] : [["enviar", "Enviar", 0]]),
     ["calendario", "Calendário", 0],
-    ...(estado.eu.usuario.papel === "admin" ? [["painel", "Painel VGA", 0]] : []),
-    ["conta", "Conta", 0],
+    ["insights", "Insights", 0],
+    ...(admin ? [["painel", "Painel", 0]] : []),
   ];
   menu.innerHTML = `<nav aria-label="Menu principal">${itens
     .map(([id, nome, n]) => `<a href="#/${id}" ${rota === id ? 'aria-current="page"' : ""}>${icone[id]}${nome}${n ? `<span class="bolinha">${n}</span>` : ""}</a>`)
@@ -145,7 +162,7 @@ function desenharMenu(rota) {
 
 // ---------- rotas ----------
 async function rotear() {
-  const rota = (location.hash.replace(/^#\/?/, "") || "semana").split("?")[0];
+  const rota = (location.hash.replace(/^#\/?/, "") || "inicio").split("?")[0];
   if (!estado.eu && rota !== "entrar") {
     try {
       estado.eu = await api("/api/eu");
@@ -160,8 +177,15 @@ async function rotear() {
   }
   definirCorNicho(nichoDoUsuario()?.cor);
   desenharMenu(rota);
-  const telas = { entrar: telaEntrar, nicho: telaNicho, semana: telaSemana, enviar: telaEnviar, calendario: telaCalendario, conta: telaConta, painel: telaPainel };
-  const fn = telas[rota] || telaSemana;
+  document.body.classList.toggle("largo", rota === "inicio" || rota === "insights" || rota === "");
+  window.scrollTo(0, 0);
+  const p = parametros();
+  if (rota === "semana" && (p.item || p.filtro)) {
+    estado.irPara = p.item || null;
+    estado.filtro = p.filtro || null;
+  }
+  const telas = { entrar: telaEntrar, nicho: telaNicho, inicio: telaInicio, semana: telaSemana, enviar: telaEnviar, calendario: telaCalendario, insights: telaInsights, conta: telaConta, painel: telaPainel };
+  const fn = telas[rota] || telaInicio;
   try {
     await fn();
   } catch (e) {
@@ -196,7 +220,7 @@ function telaEntrar() {
     try {
       await api("/api/entrar", { metodo: "POST", corpo: { email: form.email.value, senha: form.senha.value } });
       estado.eu = await api("/api/eu");
-      location.hash = estado.eu.usuario.nicho ? "#/semana" : "#/nicho";
+      location.hash = estado.eu.usuario.nicho ? "#/inicio" : "#/nicho";
     } catch (err) {
       document.getElementById("erro-entrar").textContent = err.message;
     } finally {
@@ -221,7 +245,7 @@ function telaNicho() {
         await api("/api/eu/nicho", { metodo: "PUT", corpo: { nicho: b.dataset.nicho } });
         estado.eu.usuario.nicho = b.dataset.nicho;
         estado.dados = null;
-        location.hash = "#/semana";
+        location.hash = "#/inicio";
       } catch (e) {
         aviso(e.message, true);
       }
@@ -259,7 +283,8 @@ function ligarNavSemana(redesenhar) {
   );
 }
 
-function painelPendencias(p) {
+function painelPendencias(p0) {
+  const p = { ...p0, aprovado: (p0.aprovado || 0) + (p0.agendado || 0) + (p0.publicado || 0) };
   const total = p.falta_material + p.para_aprovar + p.ajuste + p.aprovado;
   const pct = total ? Math.round((p.aprovado / total) * 100) : 0;
   const caixa = (chave, classe, nome) =>
@@ -330,7 +355,7 @@ function blocoMaterial(i) {
 
 function cartaoPauta(i) {
   const aberto = estado.abertos.has(i.id);
-  const editavel = i.status !== "aprovado";
+  const editavel = !TRAVADOS.includes(i.status);
   const legenda = i.legendaFinal;
   const detalhes = [
     i.roteiro?.length && `<div class="bloco"><span class="rotulo">Roteiro</span><ol>${i.roteiro.map((r) => `<li>${esc(r)}</li>`).join("")}</ol></div>`,
@@ -353,7 +378,9 @@ function cartaoPauta(i) {
   ].filter(Boolean).join("");
 
   let acoes;
-  if (i.status === "aprovado") {
+  if (i.status === "agendado" || i.status === "publicado") {
+    acoes = `<p class="ajuda" style="flex:1 1 100%;font-size:13px">${i.status === "publicado" ? "🚀 Publicado" : "🗓️ Agendado pela VGA"} para ${NOMES_DIAS[i.dia].toLowerCase()} às ${esc(i.horarioFinal)}.</p>`;
+  } else if (i.status === "aprovado") {
     acoes = `<p class="ajuda" style="flex:1 1 100%;font-size:13px">✅ Aprovado ${i.aprovadoEm ? `em ${dataHora(i.aprovadoEm)}` : ""}. A VGA agenda para ${NOMES_DIAS[i.dia].toLowerCase()} às ${esc(i.horarioFinal)}.</p>
       ${i.versaoAnterior ? '<span class="versao-anterior">Pauta de uma versão anterior da estratégia.</span>' : '<button class="btn btn-contorno btn-pequeno" data-acao="desfazer">Desfazer aprovação</button>'}`;
   } else {
@@ -378,7 +405,8 @@ function cartaoPauta(i) {
 }
 
 function listaDias(d) {
-  const itens = estado.filtro ? d.itens.filter((i) => i.status === estado.filtro) : d.itens;
+  const bate = (i) => (estado.filtro === "aprovado" ? TRAVADOS.includes(i.status) : i.status === estado.filtro);
+  const itens = estado.filtro ? d.itens.filter(bate) : d.itens;
   if (!itens.length) return `<div class="vazio">Nenhuma pauta com “${STATUS[estado.filtro]}”. <button class="link" data-limpar>Ver todas</button></div>`;
   const hoje = estado.eu.hoje;
   return DIAS.map((dia, idx) => {
@@ -433,6 +461,19 @@ function desenharSemana({ manterRolagem = false } = {}) {
   );
   tela.querySelector("#dias").addEventListener("click", acaoPauta);
   if (manterRolagem) window.scrollTo(0, y);
+  if (estado.irPara) {
+    const alvo = document.getElementById(`pauta-${estado.irPara}`);
+    estado.irPara = null;
+    if (alvo) {
+      alvo.querySelector("details")?.setAttribute("open", "");
+      requestAnimationFrame(() => {
+        window.scrollTo(0, alvo.getBoundingClientRect().top + window.scrollY - 80);
+        alvo.animate?.([{ boxShadow: "0 0 0 3px var(--verde)" }, { boxShadow: "0 0 0 0 transparent" }], { duration: 1600 });
+      });
+    }
+  } else if (estado.filtro && !manterRolagem) {
+    requestAnimationFrame(() => document.getElementById("estrategia")?.scrollIntoView());
+  }
   desenharMenu("semana");
 }
 
@@ -656,7 +697,7 @@ function desenharEnviar() {
           <a href="${esc(a.url)}" target="_blank" rel="noopener">${a.miniatura ? `<img src="${esc(a.miniatura)}" alt="${esc(a.nome)}" loading="lazy">` : `<div class="sem-previa">${a.tipo === "video" ? "🎬" : "🖼️"}</div>`}</a>
           ${nota(a)}<span class="tipo">${a.tipo === "video" ? `▶ ${a.duracao ? `${Math.round(a.duracao)}s` : "vídeo"}` : "foto"}</span>
           ${usado ? `<span class="usado">${NOMES_DIAS[usado.dia].slice(0, 3)}</span>` : ""}
-          ${usado?.status === "aprovado" ? "" : `<button class="apagar" data-apagar="${esc(a.id)}" aria-label="Apagar ${esc(a.nome)}">×</button>`}
+          ${TRAVADOS.includes(usado?.status) ? "" : `<button class="apagar" data-apagar="${esc(a.id)}" aria-label="Apagar ${esc(a.nome)}">×</button>`}
         </div>`;
       })
       .join("")}</div>` : '<div class="vazio">Nenhum arquivo enviado nesta semana ainda.</div>'}
@@ -824,6 +865,7 @@ function telaConta() {
     estado.eu = null;
     estado.dados = null;
     estado.semana = null;
+    estado.insights.mes = null;
     location.hash = "#/entrar";
   });
 }
@@ -836,7 +878,7 @@ async function telaPainel() {
     return;
   }
   clearTimeout(timerPainel);
-  const abas = [["estrategias", "Estratégias"], ["fila", "Aprovados e ajustes"], ["clientes", "Clientes"]];
+  const abas = [["estrategias", "Estratégias"], ["fila", "Aprovados e ajustes"], ["insights", "Insights"], ["clientes", "Clientes"]];
   const cab = `${topo()}<div class="secao"><h2><span class="marca"></span>Painel VGA</h2><p>Atualização semanal, fila de agendamento e acessos dos clientes.</p></div>
     <div class="filtros">${abas.map(([id, nome]) => `<button class="chip" data-aba="${id}" aria-pressed="${estado.painel === id}">${nome}</button>`).join("")}</div>`;
   tela.innerHTML = `${cab}<div id="painel-corpo"><div class="carregando" style="min-height:30dvh"><div class="girando"></div></div></div>`;
@@ -849,6 +891,7 @@ async function telaPainel() {
   const corpo = document.getElementById("painel-corpo");
   if (estado.painel === "estrategias") return painelEstrategias(corpo);
   if (estado.painel === "fila") return painelFila(corpo);
+  if (estado.painel === "insights") return painelInsights(corpo);
   return painelClientes(corpo);
 }
 
@@ -913,12 +956,28 @@ async function painelFila(corpo) {
           <div class="info"><strong>${esc(i.arquivo.nome)}</strong><a class="link" href="${esc(i.arquivo.url)}?baixar=1">Baixar arquivo</a></div></div>` : ""}
         ${i.legenda ? `<div class="legenda-box" style="margin-top:10px">${esc(i.legenda)}</div><button class="btn btn-contorno btn-pequeno" style="margin-top:8px" data-copiar="${n}">${icone.copiar}Copiar legenda</button>` : ""}
         ${i.sequencia?.length ? `<div class="seq" style="margin-top:10px">${i.sequencia.map((s) => `<div><b>${esc(s.momento)}</b>${esc(s.ideia)}<em>${esc(s.recurso)}</em></div>`).join("")}</div>` : ""}
+        ${TRAVADOS.includes(i.status) ? `<div class="linha-botoes" style="margin-top:10px">
+          ${i.status === "aprovado" ? `<button class="btn btn-contorno btn-pequeno" data-marcar="${n}" data-status="agendado">🗓️ Marcar como agendado</button>` : ""}
+          ${i.status !== "publicado" ? `<button class="btn btn-verde btn-pequeno" data-marcar="${n}" data-status="publicado">🚀 Marcar como publicado</button>` : `<button class="btn btn-contorno btn-pequeno" data-marcar="${n}" data-status="agendado">Voltar para agendado</button>`}
+        </div>` : ""}
       </div>`)
       .join("")}`;
   corpo.querySelectorAll("[data-copiar]").forEach((b) =>
     b.addEventListener("click", async () => {
       await navigator.clipboard.writeText(r.itens[Number(b.dataset.copiar)].legenda);
       aviso("Legenda copiada!");
+    }),
+  );
+  corpo.querySelectorAll("[data-marcar]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const i = r.itens[Number(b.dataset.marcar)];
+      try {
+        await api("/api/admin/fila/status", { metodo: "POST", corpo: { usuario_id: i.usuario_id, semana: i.semana, item_id: i.item_id, status: b.dataset.status } });
+        aviso(b.dataset.status === "publicado" ? "Marcado como publicado." : "Marcado como agendado.");
+        painelFila(corpo);
+      } catch (e) {
+        aviso(e.message, true);
+      }
     }),
   );
 }
@@ -1023,6 +1082,351 @@ async function painelClientes(corpo) {
       }
     }),
   );
+}
+
+// ---------- números, variações e gráficos ----------
+const num = (v, casas = 0) => (v === null || v === undefined ? "–" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }));
+const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const nomeMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1].replace(/^./, (l) => l.toUpperCase())} de ${m.slice(0, 4)}`;
+const mesCurto = (m) => MESES_CURTOS[Number(m.slice(5, 7)) - 1];
+
+function seta(v, { decimal = false, absoluto = false, sufixo = "vs mês anterior" } = {}) {
+  if (!v) return `<span class="var sem">sem comparação</span>`;
+  if (v.sentido === "igual") return `<span class="var igual">= igual ao mês anterior</span>`;
+  const subiu = v.delta > 0;
+  const quanto = v.pct !== null && !decimal && !absoluto ? `${num(Math.abs(v.pct), 1)}%` : num(Math.abs(v.delta), decimal ? 1 : 0);
+  return `<span class="var ${v.sentido}" title="${v.sentido === "melhor" ? "Melhorou" : "Piorou"}">${subiu ? "▲" : "▼"} ${quanto} <span style="font-weight:500;color:var(--texto-2)">${sufixo}</span></span>`;
+}
+
+// Gráfico de linha simples em SVG. pontos: [{mes, valor|null}]
+function graficoLinha(pontos, { mini = false, decimal = false, menorMelhor = false, cor = "var(--nicho)" } = {}) {
+  const val = pontos.map((p) => (typeof p.valor === "number" ? p.valor : null));
+  const existentes = val.filter((v) => v !== null);
+  if (!existentes.length) return "";
+  const L = mini ? 120 : 320;
+  const A = mini ? 30 : 140;
+  const mx = mini ? 3 : 18;
+  const topo = mini ? 3 : 22;
+  const base = mini ? 3 : 24;
+  let min = Math.min(...existentes);
+  let max = Math.max(...existentes);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const x = (i) => mx + (i * (L - 2 * mx)) / Math.max(1, pontos.length - 1);
+  const y = (v) => {
+    const t = (v - min) / (max - min);
+    return topo + (menorMelhor ? t : 1 - t) * (A - topo - base);
+  };
+  const trechos = [];
+  let atual = [];
+  val.forEach((v, i) => {
+    if (v === null) {
+      if (atual.length) trechos.push(atual);
+      atual = [];
+    } else atual.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  });
+  if (atual.length) trechos.push(atual);
+  const linhas = trechos.map((t) => (t.length > 1 ? `<polyline points="${t.join(" ")}" fill="none" stroke="${cor}" stroke-width="${mini ? 2 : 2.5}" stroke-linejoin="round" stroke-linecap="round"/>` : "")).join("");
+  const pontosSvg = val
+    .map((v, i) => (v === null ? "" : `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${mini ? 0 : i === val.length - 1 ? 4.5 : 3}" fill="${i === val.length - 1 ? cor : "var(--preto-2)"}" stroke="${cor}" stroke-width="2"/>`))
+    .join("");
+  const texto = pontos.map((p, i) => `${mesCurto(p.mes)}: ${val[i] === null ? "sem dado" : num(val[i], decimal ? 1 : 0)}`).join(", ");
+  if (mini) return `<svg class="mini" viewBox="0 0 ${L} ${A}" preserveAspectRatio="none" role="img" aria-label="Evolução: ${esc(texto)}">${linhas}${pontosSvg}</svg>`;
+  const rotulos = pontos.map((p, i) => `<text class="eixo" x="${x(i).toFixed(1)}" y="${A - 6}" text-anchor="middle">${mesCurto(p.mes)}</text>`).join("");
+  const valores = val.map((v, i) => (v === null ? "" : `<text class="rotulo-valor" x="${x(i).toFixed(1)}" y="${(y(v) - 9).toFixed(1)}" text-anchor="middle">${num(v, decimal ? 1 : 0)}</text>`)).join("");
+  return `<svg viewBox="0 0 ${L} ${A}" role="img" aria-label="Evolução nos últimos meses: ${esc(texto)}">
+    <line x1="${mx}" x2="${L - mx}" y1="${A - base}" y2="${A - base}" stroke="var(--borda)"/>${linhas}${pontosSvg}${valores}${rotulos}</svg>`;
+}
+
+function estrelas(n) {
+  const r = Math.round(n);
+  return "★".repeat(r) + "☆".repeat(Math.max(0, 5 - r));
+}
+
+function vazioCartao(icone, texto, acao = "") {
+  return `<div class="vazio-cartao"><span class="ic">${icone}</span><span>${texto}</span>${acao}</div>`;
+}
+
+// ---------- Início (Dashboard) ----------
+async function telaInicio() {
+  carregando();
+  const d = await api("/api/inicio");
+  definirCorNicho(d.saudacao.nicho.cor);
+  const p = d.pendencias;
+  const totalPend = p.para_aprovar.total + p.ajuste.total + p.falta_material.total;
+  const acao = (classe, n, titulo, texto, botao, link) =>
+    n ? `<div class="acao"><span class="num ${classe}">${n}</span><div class="txt"><strong>${titulo}</strong>${texto}</div><a class="btn btn-contorno btn-pequeno" href="${link}">${botao}</a></div>` : "";
+  const sem = d.semana;
+  const pct = (v) => (sem.planejados ? (v / sem.planejados) * 100 : 0);
+  const px = sem.proximo;
+
+  const ind = d.indicadores;
+  const cartaoInd = (i) => {
+    const decimal = Boolean(i.decimal);
+    const sub = i.id === "contatos" && i.detalhe
+      ? [i.detalhe.whatsapp !== null && `${num(i.detalhe.whatsapp)} WhatsApp`, i.detalhe.ligacoes !== null && `${num(i.detalhe.ligacoes)} ligações`, i.detalhe.rotas !== null && `${num(i.detalhe.rotas)} rotas`].filter(Boolean).join(" · ")
+      : i.avaliacoes !== null && i.avaliacoes !== undefined ? `${num(i.avaliacoes)} avaliações` : "";
+    return `<div class="ind"><span class="nome">${esc(i.nome)}</span><span class="valor">${decimal ? `⭐ ${num(i.valor, 1)}` : num(i.valor)}</span>
+      ${sub ? `<span class="sub">${esc(sub)}</span>` : ""}${seta(i.variacao, { decimal, sufixo: "" })}${graficoLinha(i.serie, { mini: true, decimal })}</div>`;
+  };
+
+  const dest = d.destaque;
+  tela.innerHTML = `${topo()}
+    <div class="grade">
+      <section class="cartao saudacao largura-toda" aria-label="Saudação">
+        <span class="ola">${saudacaoHora()},</span>
+        <h1>${esc(d.saudacao.negocio)}</h1>
+        <div class="linha"><span class="chip-nicho" style="cursor:default">${d.saudacao.nicho.icone} ${esc(d.saudacao.nicho.nome)}</span>
+          <span>Semana de ${ddmm(sem.semana)} a ${ddmm(sem.fim)}</span></div>
+        ${sem.tema ? `<p class="ajuda" style="margin-top:10px">Foco da semana: <strong style="color:var(--texto)">${esc(sem.tema)}</strong></p>` : ""}
+      </section>
+
+      <section class="cartao acoes-pend ${totalPend ? "" : "tudo-ok"} largura-toda" aria-label="Ações pendentes">
+        <h2><span class="marca" style="background:${totalPend ? "var(--laranja)" : "var(--verde)"}"></span>${totalPend ? "Ações pendentes" : "Tudo em dia"}</h2>
+        ${totalPend
+          ? `${acao("aprovar", p.para_aprovar.total, p.para_aprovar.total === 1 ? "post para aprovar" : "posts para aprovar", "Confira e aprove para a VGA agendar.", "Aprovar", `#/semana?filtro=para_aprovar${p.para_aprovar.item_id ? `&item=${encodeURIComponent(p.para_aprovar.item_id)}` : ""}`)}
+             ${acao("ajuste", p.ajuste.total, p.ajuste.total === 1 ? "ajuste pedido" : "ajustes pedidos", "A equipe VGA está cuidando. Veja o andamento.", "Ver", `#/semana?filtro=ajuste${p.ajuste.item_id ? `&item=${encodeURIComponent(p.ajuste.item_id)}` : ""}`)}
+             ${acao("falta", p.falta_material.total, p.falta_material.total === 1 ? "pauta sem foto ou vídeo" : "pautas sem foto ou vídeo", "Envie o material e a IA escolhe o melhor.", "Enviar", "#/enviar")}`
+          : vazioCartao("🎉", "Nenhuma ação pendente. Tudo aprovado ou com a VGA.")}
+      </section>
+
+      <section class="cartao largura-toda" aria-label="Resumo da semana">
+        <div class="cab-cartao"><h2><span class="marca"></span>Resumo da semana</h2><a class="link" href="#/semana">Ver semana</a></div>
+        <div class="etapas"><div><b>${sem.planejados}</b><span>planejados</span></div><div><b>${sem.aprovados}</b><span>aprovados</span></div>
+          <div><b>${sem.agendados}</b><span>agendados</span></div><div><b>${sem.publicados}</b><span>publicados</span></div></div>
+        <div class="barra-etapas" role="img" aria-label="${sem.aprovados} de ${sem.planejados} aprovados, ${sem.agendados} agendados, ${sem.publicados} publicados">
+          <i class="pub" style="width:${pct(sem.publicados)}%"></i><i class="age" style="width:${pct(sem.agendados - sem.publicados)}%"></i><i class="apr" style="width:${pct(sem.aprovados - sem.agendados)}%"></i></div>
+        <div class="legenda-barra"><span><i style="background:var(--verde)"></i>publicado</span><span><i style="background:color-mix(in srgb, var(--verde) 55%, var(--preto-3))"></i>agendado</span><span><i style="background:var(--nicho)"></i>aprovado</span></div>
+        ${px
+          ? `<a class="proximo" href="#/semana?item=${encodeURIComponent(px.id)}"><div class="mini">${px.miniatura ? `<img src="${esc(px.miniatura)}" alt="">` : px.formato === "reels" || px.formato === "stories" ? "🎥" : "📷"}</div>
+              <div class="txt"><span class="rotulo">Próximo post · ${NOMES_DIAS[px.dia]} ${ddmm(px.data)} às ${esc(px.horario)}</span><strong>${FORMATOS[px.formato]}: ${esc(px.titulo)}</strong><em>${esc(px.previa)}</em>
+              <span class="status ${px.status}" style="margin-left:0;display:inline-block;margin-top:4px">${STATUS[px.status]}</span></div></a>`
+          : vazioCartao("✅", "Não há mais posts previstos nesta semana.")}
+      </section>
+
+      <section class="cartao largura-toda" aria-label="Indicadores principais">
+        <div class="cab-cartao"><h2><span class="marca"></span>Indicadores${ind ? ` · ${esc(nomeMes(ind.mes))}` : ""}</h2></div>
+        ${ind && ind.lista.length
+          ? `<div class="indicadores seis">${ind.lista.map(cartaoInd).join("")}</div>`
+          : vazioCartao("📊", "Os números do mês aparecem aqui assim que a equipe VGA lançar os seus resultados.")}
+        <a class="btn btn-contorno btn-bloco" style="margin-top:12px" href="#/insights">${icone.insights}Ver insights completos</a>
+      </section>
+
+      <section class="cartao" aria-label="Destaque do mês">
+        <h2><span class="marca"></span>Destaque do mês</h2>
+        ${dest
+          ? `<div class="destaque-post"><span class="rotulo">🏆 Post que mais engajou${dest.tipo ? ` · ${esc(dest.tipo)}` : ""}</span><span class="titulo-post">${esc(dest.titulo)}</span>
+              <div class="numeros-post"><span><b>${num(dest.interacoes)}</b>interações</span><span><b>${num(dest.alcance)}</b>alcance</span></div>
+              ${dest.link ? `<a class="link" href="${esc(dest.link)}" target="_blank" rel="noopener noreferrer">Abrir no Instagram</a>` : ""}</div>`
+          : vazioCartao("🏆", "Quando houver números do Instagram, o post campeão do mês aparece aqui.")}
+      </section>
+
+      <section class="cartao" aria-label="Próximas datas">
+        <div class="cab-cartao"><h2><span class="marca"></span>Próximas datas</h2><a class="link" href="#/calendario">Calendário</a></div>
+        ${d.datas.length
+          ? `<div class="data-lista">${d.datas.map((x) => `<div class="ev meu"><div class="dt"><b>${x.inicio.slice(8, 10)}</b><span>${MESES[Number(x.inicio.slice(5, 7)) - 1].slice(0, 3)}</span></div>
+              <div class="txt"><strong>${esc(x.nome)}</strong><span class="tipo-ev ${esc(x.tipo)}">${esc(x.tipo)}</span>
+              ${x.divulgarDesde ? `<span class="divulgar">${x.divulgarAgora ? "📣 Já é hora de divulgar!" : `📣 Comece a divulgar em ${ddmm(x.divulgarDesde)}`}</span>` : ""}</div></div>`).join("")}</div>`
+          : vazioCartao("🗓️", "Sem datas especiais do seu nicho nas próximas semanas.")}
+      </section>
+
+      <section class="cartao largura-toda" aria-label="Dica da semana" style="border-color:var(--verde)">
+        <h2><span class="marca" style="background:var(--verde)"></span>Dica da semana</h2>
+        <p style="font-size:16px">💡 ${esc(d.dica.texto)}</p>
+        ${d.dica.item_id ? `<a class="btn btn-verde btn-pequeno" style="margin-top:12px" href="#/semana?item=${encodeURIComponent(d.dica.item_id)}">Ver o post na estratégia</a>` : ""}
+      </section>
+    </div>`;
+}
+
+function saudacaoHora() {
+  const h = Number(new Intl.DateTimeFormat("pt-BR", { hour: "numeric", hourCycle: "h23", timeZone: "America/Sao_Paulo" }).format(new Date()));
+  return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+}
+
+// ---------- Insights ----------
+async function telaInsights() {
+  carregando();
+  const q = estado.insights.mes ? `?mes=${estado.insights.mes}` : "";
+  const d = await api(`/api/insights${q}`);
+  estado.insights.mes = d.mes;
+  const r = d.resumo;
+  const fonte = d.fontes[estado.insights.fonte] || d.fontes.meta;
+  const idx = d.meses.indexOf(d.mes);
+  const anteriorMes = d.meses[idx + 1] || null;
+  const proximoMes = idx > 0 ? d.meses[idx - 1] : null;
+
+  const caixaResumo = (rotulo, valor, sub, variacaoHtml) => `<div class="ind"><span class="nome">${rotulo}</span><span class="valor">${valor}</span>${sub ? `<span class="sub">${sub}</span>` : ""}${variacaoHtml || ""}</div>`;
+  tela.innerHTML = `${topo()}
+    <div class="semana-nav">
+      <button class="redondo" data-mes="${esc(anteriorMes || "")}" ${anteriorMes ? "" : "disabled"} aria-label="Mês anterior">${icone.esq}</button>
+      <div class="titulo"><strong>Insights</strong><span>${esc(nomeMes(d.mes))}</span></div>
+      <button class="redondo" data-mes="${esc(proximoMes || "")}" ${proximoMes ? "" : "disabled"} aria-label="Próximo mês">${icone.dir}</button>
+    </div>
+    <section class="cartao largura-toda" aria-label="Resumo geral" style="margin-top:8px">
+      <h2><span class="marca"></span>Resumo geral</h2>
+      <div class="indicadores grade-3" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        ${caixaResumo("Nota média", r.nota ? `⭐ ${num(r.nota.valor, 1)}` : "—", r.nota ? `${num(r.nota.avaliacoes)} avaliações (${r.nota.fontes.join(" + ")})` : "sem avaliações lançadas")}
+        ${caixaResumo("Seguidores", r.seguidores ? num(r.seguidores.valor) : "—", r.seguidores?.variacao ? `${r.seguidores.variacao.delta >= 0 ? "+" : "−"}${num(Math.abs(r.seguidores.variacao.delta))} no mês` : "", r.seguidores ? seta(r.seguidores.variacao, { sufixo: "" }) : "")}
+        ${caixaResumo("Contatos gerados", r.contatos ? num(r.contatos.valor) : "—", "WhatsApp, link, ligações, rotas e site", r.contatos ? seta(r.contatos.variacao, { sufixo: "" }) : "")}
+      </div>
+    </section>
+    <div class="filtros abas-fontes" role="tablist">${Object.values(d.fontes)
+      .map((f) => `<button class="chip" role="tab" data-fonte="${f.id}" aria-pressed="${f.id === fonte.id}">${f.icone} ${esc(f.id === "meta" ? "Instagram/Facebook" : f.id === "google" ? "Google" : "TripAdvisor")}</button>`)
+      .join("")}</div>
+    ${secaoFonte(fonte, d)}`;
+
+  tela.querySelectorAll("[data-mes]").forEach((b) => b.addEventListener("click", () => {
+    if (!b.dataset.mes) return;
+    estado.insights.mes = b.dataset.mes;
+    telaInsights();
+  }));
+  tela.querySelectorAll("[data-fonte]").forEach((b) => b.addEventListener("click", () => {
+    estado.insights.fonte = b.dataset.fonte;
+    telaInsights();
+  }));
+  tela.querySelectorAll("[data-grafico]").forEach((b) => b.addEventListener("click", () => {
+    const g = fonte.graficos[Number(b.dataset.grafico)];
+    tela.querySelectorAll("[data-grafico]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    tela.querySelector("#grafico").innerHTML = graficoLinha(g.pontos, { decimal: /nota/.test(g.id), menorMelhor: g.menorMelhor });
+  }));
+}
+
+function secaoFonte(f, d) {
+  const origem = f.origem === "api" ? "pela API oficial" : f.origem === "csv" ? "por planilha" : "pela equipe VGA";
+  const cab = `<div class="fonte-cab"><span class="ic">${f.icone}</span><div><h2>${esc(f.nome)}</h2>
+    <small>${f.temDados ? `Atualizado ${origem}${f.atualizado_em ? ` em ${dataHora(f.atualizado_em)}` : ""}` : esc(d.conexoes[f.id])}</small></div></div>`;
+  if (!f.temDados) {
+    return `${cab}<div class="cartao">${vazioCartao(f.icone, `A equipe VGA ainda não lançou os números de ${esc(f.nome)} em ${esc(nomeMes(d.mes).toLowerCase())}.`, '<span class="ajuda" style="font-size:13px">Assim que lançar, eles aparecem aqui com a comparação do mês anterior.</span>')}</div>`;
+  }
+  const cartoes = f.cartoes.map((c) => `<div class="ind"><span class="nome">${esc(c.nome)}</span>
+    <span class="valor">${c.id.startsWith("nota") ? `⭐ ${num(c.valor, 1)}` : c.id === "ranking_posicao" ? `${num(c.valor)}º` : num(c.valor, c.decimal ? 1 : 0)}</span>
+    ${seta(c.variacao, { decimal: c.decimal, absoluto: c.id === "ranking_posicao", sufixo: c.id === "ranking_posicao" ? "posição(ões)" : "" })}</div>`).join("");
+  const g0 = f.graficos[0];
+  const L = f.listas;
+  const blocoLista = (titulo, conteudo) => (conteudo ? `<section class="cartao"><h2><span class="marca"></span>${titulo}</h2>${conteudo}</section>` : "");
+  const barras = (itens, rotulo) => (itens?.length ? `<div class="barras">${itens.map((i) => {
+    const max = Math.max(...itens.map((x) => x.valor)) || 1;
+    return `<div class="linha-barra"><span title="${esc(i[rotulo])}">${esc(i[rotulo])}</span><div class="trilho"><i style="width:${(i.valor / max) * 100}%"></i></div><b>${num(i.valor)}${i.valor <= 100 ? "%" : ""}</b></div>`;
+  }).join("")}</div>` : "");
+  const avaliacoes = (lista) => (lista?.length ? lista.map((a) => `<div class="avaliacao"><span class="estrelas" aria-label="${a.nota} de 5">${estrelas(a.nota)}</span> <strong>${esc(a.autor)}</strong> <small>${a.data ? ddmm(a.data) : ""}</small>
+    ${a.respondida ? "" : ' <span class="sem-resp">· sem resposta</span>'}<p>${esc(a.texto)}</p></div>`).join("") : "");
+  const posts = L.melhores_posts?.length ? L.melhores_posts.map((p, i) => `<div class="avaliacao"><strong>${i + 1}. ${esc(p.titulo)}</strong> <small>${esc(p.tipo)}</small>
+    <p class="ajuda" style="font-size:13px">${num(p.interacoes)} interações · ${num(p.alcance)} de alcance ${p.link ? `· <a class="link" href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">abrir</a>` : ""}</p></div>`).join("") : "";
+
+  return `${cab}
+    <div class="grade">
+      <section class="cartao largura-toda" aria-label="Números do mês"><h2><span class="marca"></span>Números do mês</h2>
+        <div class="indicadores seis">${cartoes}</div>
+        ${f.mesAnteriorTemDados ? "" : '<p class="ajuda" style="font-size:12px;margin-top:8px">Sem números do mês anterior para comparar.</p>'}</section>
+      ${g0 ? `<section class="cartao grafico" aria-label="Evolução"><h2><span class="marca"></span>Evolução (6 meses)</h2>
+        <div class="filtros" style="margin:0 0 8px">${f.graficos.map((g, i) => `<button class="chip" data-grafico="${i}" aria-pressed="${i === 0}" style="padding:6px 12px;font-size:13px">${esc(g.nome)}</button>`).join("")}</div>
+        <div id="grafico">${graficoLinha(g0.pontos, { decimal: /nota/.test(g0.id), menorMelhor: g0.menorMelhor })}</div></section>` : ""}
+      <section class="cartao significa" aria-label="O que isso significa"><h2><span class="marca"></span>O que isso significa</h2>
+        <ul>${f.leituras.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+        ${f.recomendacao ? `<div class="recomenda"><strong>Recomendação para esta semana</strong>${esc(f.recomendacao.texto)}
+          ${f.recomendacao.item_id ? `<div style="margin-top:8px"><a class="link" href="#/semana?item=${encodeURIComponent(f.recomendacao.item_id)}">Ver o post na estratégia da semana →</a></div>` : ""}</div>` : ""}
+        ${f.nota_equipe ? `<div class="nota-equipe">💬 <strong>Equipe VGA:</strong> ${esc(f.nota_equipe)}</div>` : ""}
+      </section>
+      ${blocoLista("Melhores posts", posts)}
+      ${blocoLista("Horários com mais seguidores online", barras(L.horarios_online, "faixa"))}
+      ${blocoLista("Cidades do público", barras(L.cidades, "nome"))}
+      ${blocoLista("Idade do público", barras(L.idades, "faixa"))}
+      ${f.id === "tripadvisor" && L.selos?.length ? blocoLista("Selos", `<div class="selos">${L.selos.map((s) => `<span>🏅 ${esc(s.nome)}</span>`).join("")}</div>`) : ""}
+      ${blocoLista("Últimas avaliações", avaliacoes(L.ultimas_avaliacoes))}
+    </div>
+    ${f.id === "tripadvisor" ? '<p class="ajuda" style="font-size:12px;margin-top:10px">Dados do TripAdvisor copiados do painel do estabelecimento pela equipe VGA.</p>' : ""}`;
+}
+
+// ---------- Painel VGA: Insights (formulário por cliente e mês + CSV) ----------
+async function painelInsights(corpo) {
+  const clientes = (await api("/api/admin/clientes")).clientes.filter((c) => c.papel !== "admin");
+  const ai = estado.adminInsights;
+  if (!ai.usuario && clientes[0]) ai.usuario = clientes[0].id;
+  if (!ai.mes) {
+    const hoje = estado.eu.hoje;
+    const [a, m] = hoje.split("-").map(Number);
+    ai.mes = m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, "0")}`;
+  }
+  if (!clientes.length) {
+    corpo.innerHTML = '<div class="vazio">Crie um cliente primeiro (aba Clientes).</div>';
+    return;
+  }
+  const d = await api(`/api/admin/insights?usuario_id=${ai.usuario}&mes=${ai.mes}`);
+  const F = d.campos[ai.fonte];
+  const atual = d.fontes[ai.fonte];
+  const con = d.conectores[ai.fonte];
+  corpo.innerHTML = `<div class="cartao">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:0">
+        <div class="campo"><label for="ai-cliente">Cliente</label><select id="ai-cliente">${clientes.map((c) => `<option value="${c.id}" ${c.id === ai.usuario ? "selected" : ""}>${esc(c.negocio || c.nome)}</option>`).join("")}</select></div>
+        <div class="campo"><label for="ai-mes">Mês</label><input id="ai-mes" type="month" value="${esc(ai.mes)}"></div>
+      </div>
+      <div class="filtros" style="margin:4px 0 0">${Object.values(d.campos).map((f) => `<button class="chip" data-ai-fonte="${f.id}" aria-pressed="${f.id === ai.fonte}">${f.icone} ${esc(f.curto)}</button>`).join("")}</div>
+      ${d.meses.length ? `<p class="ajuda" style="font-size:12px;margin-top:8px">Meses já lançados: ${d.meses.map((m) => esc(m)).join(", ")}</p>` : ""}
+    </div>
+    <form class="cartao form-insights" id="form-insights">
+      <span class="rotulo">${esc(F.nome)} · ${esc(nomeMes(ai.mes))}</span>
+      ${atual.origem ? `<p class="ajuda" style="font-size:12px">Última atualização (${esc(atual.origem)}): ${dataHora(atual.atualizado_em)}</p>` : '<p class="ajuda" style="font-size:12px">Ainda sem números neste mês. Deixe em branco o que não tiver.</p>'}
+      <fieldset><legend>Números do mês</legend><div class="duas">
+        ${F.numeros.map((n) => `<div class="campo"><label for="n-${n.id}">${esc(n.nome)}</label><input id="n-${n.id}" name="${n.id}" inputmode="decimal" value="${atual.dados[n.id] ?? ""}" placeholder="${n.decimal ? "ex.: 4,7" : "ex.: 1.250"}" ${n.ajuda ? `title="${esc(n.ajuda)}"` : ""}></div>`).join("")}
+        ${(F.textos || []).map((t) => `<div class="campo" style="grid-column:1/-1"><label for="t-${t.id}">${esc(t.nome)}</label><input id="t-${t.id}" name="${t.id}" value="${esc(atual.dados[t.id] || "")}" placeholder="${esc(t.ajuda || "")}"></div>`).join("")}
+      </div></fieldset>
+      ${F.listas.map((l) => `<fieldset><legend>${esc(l.nome)}</legend><p class="ajuda" style="font-size:12px;margin-bottom:6px">Um por linha: ${esc(l.ajuda)}</p>
+        <textarea name="${l.id}" aria-label="${esc(l.nome)}">${esc(atual.textos[l.id] || "")}</textarea></fieldset>`).join("")}
+      <div class="campo"><label for="nota-equipe">Comentário da equipe VGA (aparece para o cliente)</label><textarea id="nota-equipe" name="nota_equipe" style="min-height:70px">${esc(atual.nota_equipe || "")}</textarea></div>
+      <p class="erro" id="erro-insights"></p>
+      <button class="btn btn-verde btn-bloco" type="submit">Salvar ${esc(F.curto)} de ${esc(nomeMes(ai.mes).toLowerCase())}</button>
+      <p class="ajuda" style="font-size:12px;margin-top:10px">${con.manual ? "🦉 " : "🔌 "}<strong>${esc(con.nome)}:</strong> ${con.manual ? "sem API com dados do dono; preenchimento manual." : con.configurado ? "credenciais configuradas (Fase 2)." : "conexão automática chega na Fase 2."}</p>
+    </form>
+    <div class="cartao"><span class="rotulo">Importar planilha (CSV)</span>
+      <p class="ajuda" style="font-size:13px;margin:6px 0 10px">Uma informação por linha: <code>email;mes;fonte;campo;valor</code>. Serve para vários clientes e meses de uma vez.</p>
+      <div class="linha-botoes" style="margin-bottom:10px"><a class="btn btn-contorno btn-pequeno" href="/api/admin/insights/modelo.csv">Baixar modelo</a>
+        <label class="btn btn-contorno btn-pequeno">Escolher arquivo<input type="file" id="csv-arquivo" accept=".csv,text/csv" hidden></label></div>
+      <textarea id="csv-texto" placeholder="ou cole aqui o conteúdo do CSV" style="min-height:100px;font-size:13px"></textarea>
+      <div class="linha-botoes" style="margin-top:10px"><button class="btn btn-contorno btn-pequeno" id="csv-conferir">Conferir</button><button class="btn btn-verde btn-pequeno" id="csv-importar" disabled>Importar</button></div>
+      <div class="resultado-csv" id="csv-resultado"></div>
+    </div>`;
+
+  corpo.querySelector("#ai-cliente").addEventListener("change", (e) => { ai.usuario = Number(e.target.value); painelInsights(corpo); });
+  corpo.querySelector("#ai-mes").addEventListener("change", (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { ai.mes = e.target.value; painelInsights(corpo); } });
+  corpo.querySelectorAll("[data-ai-fonte]").forEach((b) => b.addEventListener("click", () => { ai.fonte = b.dataset.aiFonte; painelInsights(corpo); }));
+  corpo.querySelector("#form-insights").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const dados = {};
+    for (const n of F.numeros) dados[n.id] = f.elements[n.id].value;
+    for (const t of F.textos || []) dados[t.id] = f.elements[t.id].value;
+    for (const l of F.listas) dados[l.id] = f.elements[l.id].value;
+    try {
+      const r = await api("/api/admin/insights", { metodo: "PUT", corpo: { usuario_id: ai.usuario, mes: ai.mes, fonte: ai.fonte, dados, nota_equipe: f.elements.nota_equipe.value } });
+      aviso(r.apagado ? "Mês sem números: registro removido." : "Números salvos. O cliente já vê na aba Insights.");
+      painelInsights(corpo);
+    } catch (err) {
+      corpo.querySelector("#erro-insights").textContent = err.message;
+    }
+  });
+  const txt = corpo.querySelector("#csv-texto");
+  corpo.querySelector("#csv-arquivo").addEventListener("change", async (e) => {
+    const arq = e.target.files[0];
+    if (arq) txt.value = await arq.text();
+  });
+  const btnImportar = corpo.querySelector("#csv-importar");
+  const enviar = async (aplicar) => {
+    const saida = corpo.querySelector("#csv-resultado");
+    try {
+      const r = await api("/api/admin/insights/importar", { metodo: "POST", corpo: { csv: txt.value, aplicar } });
+      btnImportar.disabled = Boolean(r.erros.length) || !r.grupos.length || r.aplicado;
+      saida.innerHTML = `${r.aplicado ? "<p><strong style='color:var(--verde)'>✅ Importado!</strong></p>" : ""}
+        <p>${r.grupos.length} conjunto(s): ${r.grupos.map((g) => `${esc(g.nome)} · ${esc(g.fonte)} · ${esc(g.mes)} (${g.campos} campos)`).join("; ") || "nenhum"}</p>
+        ${r.erros.length ? `<p class="erro">Corrija antes de importar:</p>${r.erros.slice(0, 20).map((x) => `<span class="erro">${x.linha ? `Linha ${x.linha}: ` : ""}${esc(x.erro)}</span>`).join("")}` : r.aplicado ? "" : "<p class='ajuda'>Tudo certo. Toque em Importar para gravar.</p>"}`;
+      if (r.aplicado) aviso("Planilha importada.");
+    } catch (err) {
+      saida.innerHTML = `<span class="erro">${esc(err.message)}</span>`;
+    }
+  };
+  corpo.querySelector("#csv-conferir").addEventListener("click", () => enviar(false));
+  btnImportar.addEventListener("click", () => enviar(true));
 }
 
 window.addEventListener("hashchange", rotear);

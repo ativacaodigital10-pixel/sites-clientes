@@ -11,11 +11,15 @@ import {
 } from "./src/auth.js";
 import { NICHOS, buscarNicho, resumoNichos, REGRAS_GERAIS } from "./conteudo/nichos.js";
 import { CALENDARIO, DIAS_ANTECEDENCIA, datasNoPeriodo, valeParaNicho } from "./conteudo/calendario.js";
-import { semanaAtual, segundaDaSemana, somarDias, dataValida, horarioValido, hojeSP } from "./src/datas.js";
+import { semanaAtual, segundaDaSemana, somarDias, dataValida, horarioValido, hojeSP, agoraSP } from "./src/datas.js";
 import { obterEstrategia, lerEstrategia, personalizar } from "./src/estrategia.js";
 import { iaDisponivel, analisarMaterialIA, analisarMaterialModelo } from "./src/ia.js";
 import { criarGerador, ErroGeracao } from "./src/gerador.js";
 import { receberArquivo, ErroEnvio, MIME } from "./src/arquivos.js";
+import { FONTES, IDS_FONTES, normalizarDados, mesValido, mesAnterior, listaParaTexto } from "./src/insights/campos.js";
+import { analisarFonte, resumoGeral, derivados, variacao } from "./src/insights/analise.js";
+import { lerMes, salvarMes, apagarMes, mesesComDados, carregarPeriodo, importarCSV, modeloCSV } from "./src/insights/repositorio.js";
+import { CONECTORES } from "./src/insights/conectores.js";
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +27,9 @@ const MB = 1048576;
 const MAX_ARQUIVOS_SEMANA = 60;
 const MAX_ARQUIVOS_ANALISE = 20;
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Depois de aprovada, a pauta segue: aprovado -> agendado -> publicado (marcados pela equipe VGA).
+const TRAVADOS = ["aprovado", "agendado", "publicado"];
+const travado = (status) => TRAVADOS.includes(status);
 
 function texto(v, max = 2000) {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -125,7 +132,7 @@ export function criarApp({
   }
 
   function statusDoItem(item, e) {
-    if (e?.status === "aprovado") return "aprovado";
+    if (travado(e?.status)) return e.status;
     if (e?.status === "ajuste") return "ajuste";
     if (item.precisaMaterial && !e?.arquivo_id) return "falta_material";
     return "para_aprovar";
@@ -163,12 +170,12 @@ export function criarApp({
     const itens = itensEst.map((i) => juntar(i, estados.get(i.id)));
     // Pautas aprovadas de uma versão anterior da estratégia continuam aparecendo.
     for (const e of estados.values()) {
-      if (!ids.has(e.item_id) && e.status === "aprovado" && e.snapshot) {
+      if (!ids.has(e.item_id) && travado(e.status) && e.snapshot) {
         itens.push(juntar(JSON.parse(e.snapshot), e, { versaoAnterior: true }));
       }
     }
 
-    const pendencias = { falta_material: 0, para_aprovar: 0, ajuste: 0, aprovado: 0 };
+    const pendencias = { falta_material: 0, para_aprovar: 0, ajuste: 0, aprovado: 0, agendado: 0, publicado: 0 };
     for (const i of itens) pendencias[i.status] += 1;
 
     const fimJanela = somarDias(semana, 34);
@@ -247,7 +254,7 @@ export function criarApp({
   app.put("/api/itens", login, json, (req, res) => {
     const p = pautaDoCliente(req);
     if (p.erro) return res.status(p.erro[0]).json({ erro: p.erro[1] });
-    if (p.item.status === "aprovado") return res.status(409).json({ erro: "Essa pauta já foi aprovada. Desfaça a aprovação para editar." });
+    if (travado(p.item.status)) return res.status(409).json({ erro: "Essa pauta já foi aprovada. Desfaça a aprovação para editar." });
     const campos = lerLegendaHorario(req.body, p.item);
     if (campos.erro) return res.status(400).json({ erro: campos.erro });
     salvarEstado(req.usuario.id, p.semana, p.item.id, campos);
@@ -257,7 +264,7 @@ export function criarApp({
   app.post("/api/itens/aprovar", login, json, (req, res) => {
     const p = pautaDoCliente(req);
     if (p.erro) return res.status(p.erro[0]).json({ erro: p.erro[1] });
-    if (p.item.status === "aprovado") return res.json({ ok: true });
+    if (travado(p.item.status)) return res.json({ ok: true });
     const campos = lerLegendaHorario(req.body, p.item);
     if (campos.erro) return res.status(400).json({ erro: campos.erro });
     const legendaFinal = campos.legenda !== undefined ? campos.legenda ?? p.item.legenda : p.item.legendaFinal;
@@ -274,7 +281,7 @@ export function criarApp({
     if (p.erro) return res.status(p.erro[0]).json({ erro: p.erro[1] });
     const comentario = texto(req.body?.comentario, 1000);
     if (!comentario) return res.status(400).json({ erro: "Conte o que você quer mudar." });
-    if (p.item.status === "aprovado") return res.status(409).json({ erro: "Essa pauta já foi aprovada. Desfaça a aprovação antes." });
+    if (travado(p.item.status)) return res.status(409).json({ erro: "Essa pauta já foi aprovada. Desfaça a aprovação antes." });
     salvarEstado(req.usuario.id, p.semana, p.item.id, { status: "ajuste", comentario });
     res.json({ ok: true });
   });
@@ -283,6 +290,9 @@ export function criarApp({
     const p = pautaDoCliente(req);
     if (p.erro) return res.status(p.erro[0]).json({ erro: p.erro[1] });
     if (p.item.versaoAnterior) return res.status(409).json({ erro: "Essa pauta é de uma versão anterior da estratégia e não pode ser reaberta." });
+    if (p.item.status === "agendado" || p.item.status === "publicado") {
+      return res.status(409).json({ erro: "Esse post já foi agendado pela VGA. Fale com a equipe para mudar." });
+    }
     salvarEstado(req.usuario.id, p.semana, p.item.id, { status: null, comentario: null, snapshot: null, aprovado_em: null });
     res.json({ ok: true });
   });
@@ -290,7 +300,7 @@ export function criarApp({
   app.put("/api/itens/arquivo", login, json, (req, res) => {
     const p = pautaDoCliente(req);
     if (p.erro) return res.status(p.erro[0]).json({ erro: p.erro[1] });
-    if (p.item.status === "aprovado") return res.status(409).json({ erro: "Essa pauta já foi aprovada." });
+    if (travado(p.item.status)) return res.status(409).json({ erro: "Essa pauta já foi aprovada." });
     const arquivoId = req.body?.arquivo_id ? texto(req.body.arquivo_id, 60) : null;
     if (arquivoId && !db.prepare("SELECT 1 FROM arquivos WHERE id = ? AND usuario_id = ?").get(arquivoId, req.usuario.id)) {
       return res.status(404).json({ erro: "Arquivo não encontrado." });
@@ -337,7 +347,7 @@ export function criarApp({
       if (itemId) {
         const s = montarSemana(req.usuario, semana, { criar: false });
         const item = !s.erro && s.itens.find((i) => i.id === itemId);
-        if (item && item.status !== "aprovado") salvarEstado(req.usuario.id, semana, itemId, { arquivo_id: id, motivo_ia: null });
+        if (item && !travado(item.status)) salvarEstado(req.usuario.id, semana, itemId, { arquivo_id: id, motivo_ia: null });
       }
       res.status(201).json({ arquivo: arquivoPublico(db.prepare("SELECT * FROM arquivos WHERE id = ?").get(id)) });
     } catch (e) {
@@ -384,7 +394,7 @@ export function criarApp({
   app.delete("/api/arquivos/:id", login, (req, res) => {
     const a = buscarArquivoDono.get(String(req.params.id), req.usuario.id);
     if (!a) return res.status(404).json({ erro: "Arquivo não encontrado." });
-    const emAprovada = db.prepare("SELECT 1 FROM itens_estado WHERE arquivo_id = ? AND status = 'aprovado'").get(a.id);
+    const emAprovada = db.prepare("SELECT 1 FROM itens_estado WHERE arquivo_id = ? AND status IN ('aprovado', 'agendado', 'publicado')").get(a.id);
     if (emAprovada) return res.status(409).json({ erro: "Esse arquivo está numa pauta aprovada. Desfaça a aprovação antes de apagar." });
     db.prepare("DELETE FROM arquivos WHERE id = ?").run(a.id);
     fs.rm(caminhoArquivo(a), { force: true }, () => {});
@@ -404,7 +414,7 @@ export function criarApp({
       .prepare("SELECT * FROM arquivos WHERE usuario_id = ? AND semana = ? ORDER BY criado_em DESC LIMIT ?")
       .all(req.usuario.id, semana, MAX_ARQUIVOS_ANALISE);
     if (!linhas.length) return res.status(400).json({ erro: "Envie fotos ou vídeos antes de pedir a análise." });
-    const usadosAprovados = new Set(s.itens.filter((i) => i.status === "aprovado" && i.arquivo).map((i) => i.arquivo.id));
+    const usadosAprovados = new Set(s.itens.filter((i) => travado(i.status) && i.arquivo).map((i) => i.arquivo.id));
     const arquivos = linhas
       .filter((a) => !usadosAprovados.has(a.id))
       .map((a) => ({
@@ -412,7 +422,7 @@ export function criarApp({
         miniatura: a.tem_miniatura ? fs.readFileSync(caminhoMiniatura(a)).toString("base64") : null,
       }));
     const itens = s.itens
-      .filter((i) => i.status !== "aprovado" && !i.versaoAnterior)
+      .filter((i) => !travado(i.status) && !i.versaoAnterior)
       .map((i) => ({ ...i, arquivo_id: i.arquivo?.id || null }));
     if (!arquivos.length || !itens.length) return res.status(400).json({ erro: "Não há pautas ou arquivos livres para analisar." });
 
@@ -469,7 +479,7 @@ export function criarApp({
     const semana = semanaAtual();
     const clientes = db.prepare(`
       SELECT u.id, u.nome, u.email, u.papel, u.nicho, u.negocio, u.cidade, u.ativo, u.criado_em,
-        (SELECT COUNT(*) FROM itens_estado e WHERE e.usuario_id = u.id AND e.semana = ? AND e.status = 'aprovado') AS aprovados,
+        (SELECT COUNT(*) FROM itens_estado e WHERE e.usuario_id = u.id AND e.semana = ? AND e.status IN ('aprovado', 'agendado', 'publicado')) AS aprovados,
         (SELECT COUNT(*) FROM itens_estado e WHERE e.usuario_id = u.id AND e.semana = ? AND e.status = 'ajuste') AS ajustes,
         (SELECT COUNT(*) FROM arquivos a WHERE a.usuario_id = u.id AND a.semana = ?) AS arquivos
       FROM usuarios u ORDER BY u.papel DESC, u.nome COLLATE NOCASE
@@ -574,7 +584,7 @@ export function criarApp({
     const desde = somarDias(semanaAtual(), -7);
     const linhas = db.prepare(`
       SELECT e.*, u.nome AS cliente, u.negocio, u.nicho FROM itens_estado e JOIN usuarios u ON u.id = e.usuario_id
-      WHERE e.semana >= ? AND e.status IN ('aprovado', 'ajuste') ORDER BY e.semana, e.aprovado_em
+      WHERE e.semana >= ? AND e.status IN ('aprovado', 'agendado', 'publicado', 'ajuste') ORDER BY e.semana, e.aprovado_em
     `).all(desde);
     const arq = (id) => arquivoPublico(id && buscarArquivo.get(id));
     const itens = linhas.map((e) => {
@@ -592,6 +602,205 @@ export function criarApp({
     });
     itens.sort((a, b) => `${a.data}${a.horario}`.localeCompare(`${b.data}${b.horario}`));
     res.json({ itens });
+  });
+
+  // ---------- Insights ----------
+  function mesPadrao(usuarioId) {
+    return mesesComDados(db, usuarioId)[0] || mesAnterior(hojeSP().slice(0, 7));
+  }
+
+  function itensDaSemanaAtual(usuario) {
+    if (!buscarNicho(usuario.nicho)) return [];
+    const s = montarSemana(usuario, semanaAtual());
+    if (s.erro) return [];
+    const itens = s.itens.filter((i) => !i.versaoAnterior);
+    // Recomendações apontam para posts que ainda vão sair (de hoje em diante, não publicados).
+    const hoje = hojeSP();
+    const futuros = itens.filter((i) => i.status !== "publicado" && i.data >= hoje);
+    return futuros.length ? futuros : itens;
+  }
+
+  function montarInsights(usuario, mes) {
+    const periodo = carregarPeriodo(db, usuario.id, mes);
+    const itens = itensDaSemanaAtual(usuario);
+    const fontes = Object.fromEntries(IDS_FONTES.map((f) => [f, analisarFonte(f, { ...periodo[f], itensSemana: itens })]));
+    const resumo = resumoGeral({
+      atual: Object.fromEntries(IDS_FONTES.map((f) => [f, periodo[f].atual])),
+      anterior: Object.fromEntries(IDS_FONTES.map((f) => [f, periodo[f].anterior])),
+    });
+    return { mes, periodo, fontes, resumo };
+  }
+
+  app.get("/api/insights", login, (req, res) => {
+    const pedido = req.query.mes;
+    if (pedido && !mesValido(pedido)) return res.status(400).json({ erro: "Mês inválido." });
+    const mes = pedido || mesPadrao(req.usuario.id);
+    const { fontes, resumo } = montarInsights(req.usuario, mes);
+    const meses = mesesComDados(db, req.usuario.id);
+    res.json({
+      mes,
+      meses: meses.includes(mes) ? meses : [mes, ...meses].sort().reverse(),
+      resumo,
+      fontes,
+      conexoes: Object.fromEntries(IDS_FONTES.map((f) => [f, CONECTORES[f].manual ? "manual" : "manual (Fase 2: API oficial)"])),
+    });
+  });
+
+  // ---------- Início (Dashboard) ----------
+  app.get("/api/inicio", login, (req, res) => {
+    const u = req.usuario;
+    const nicho = buscarNicho(u.nicho);
+    if (!nicho) return res.status(409).json({ erro: "Escolha o seu nicho primeiro." });
+    const s = montarSemana(u, semanaAtual());
+    if (s.erro) return res.status(s.erro).json({ erro: s.mensagem });
+    const itens = s.itens.filter((i) => !i.versaoAnterior);
+
+    const primeiro = (st) => itens.find((i) => i.status === st)?.id || null;
+    const pendencias = {
+      para_aprovar: { total: s.pendencias.para_aprovar, item_id: primeiro("para_aprovar") },
+      ajuste: { total: s.pendencias.ajuste, item_id: primeiro("ajuste") },
+      falta_material: { total: s.pendencias.falta_material, item_id: primeiro("falta_material") },
+    };
+    const contar = (...st) => itens.filter((i) => st.includes(i.status)).length;
+    const agora = agoraSP();
+    const futuros = itens
+      .filter((i) => i.status !== "publicado" && `${i.data}T${i.horarioFinal}` >= agora)
+      .sort((a, b) => `${a.data}T${a.horarioFinal}`.localeCompare(`${b.data}T${b.horarioFinal}`));
+    const prox = futuros.find((i) => i.formato !== "stories") || futuros[0] || null;
+    const semana = {
+      semana: s.semana, fim: s.fim,
+      planejados: itens.length,
+      aprovados: contar("aprovado", "agendado", "publicado"),
+      agendados: contar("agendado", "publicado"),
+      publicados: contar("publicado"),
+      tema: s.estrategia.tema,
+      proximo: prox && {
+        id: prox.id, titulo: prox.titulo, formato: prox.formato, dia: prox.dia, data: prox.data, horario: prox.horarioFinal, status: prox.status,
+        previa: prox.gancho || (prox.legendaFinal || "").split("\n")[0] || prox.sequencia?.[0]?.ideia || "",
+        miniatura: prox.arquivo?.miniatura || null,
+      },
+    };
+
+    // Indicadores do último mês com números lançados.
+    const meses = mesesComDados(db, u.id);
+    let indicadores = null;
+    let destaque = null;
+    let dicaInsights = null;
+    if (meses.length) {
+      const mes = meses[0];
+      const { periodo, fontes } = montarInsights(u, mes);
+      const serie = (f, campo) => periodo[f].historico.map((h) => ({ mes: h.mes, valor: h.dados ? derivados(f, h.dados)[campo] ?? null : null }));
+      const atual = (f) => derivados(f, periodo[f].atual?.dados);
+      const ant = (f) => derivados(f, periodo[f].anterior?.dados);
+      const ind = (f, campo, nome, extra = {}) => {
+        const v = atual(f)[campo];
+        if (typeof v !== "number") return null;
+        return { id: `${f}_${campo}`, nome, valor: v, variacao: variacao(v, ant(f)[campo]), serie: serie(f, campo), ...extra };
+      };
+      const m = atual("meta");
+      const g = atual("google");
+      const somaOuNull = (...vs) => (vs.some((x) => typeof x === "number") ? vs.reduce((a, x) => a + (typeof x === "number" ? x : 0), 0) : null);
+      const contatosAtual = somaOuNull(m.contatos, g.contatos);
+      const contatosAnt = somaOuNull(ant("meta").contatos, ant("google").contatos);
+      const serieContatos = periodo.meta.historico.map((h, i) => ({
+        mes: h.mes,
+        valor: somaOuNull(h.dados ? derivados("meta", h.dados).contatos : null, periodo.google.historico[i].dados ? derivados("google", periodo.google.historico[i].dados).contatos : null),
+      }));
+      indicadores = {
+        mes,
+        lista: [
+          ind("meta", "seguidores", "Seguidores"),
+          ind("meta", "alcance", "Alcance"),
+          ind("meta", "interacoes", "Interações"),
+          contatosAtual === null ? null : {
+            id: "contatos", nome: "Contatos gerados", valor: contatosAtual, variacao: variacao(contatosAtual, contatosAnt), serie: serieContatos,
+            detalhe: { whatsapp: m.cliques_whatsapp ?? null, link: m.cliques_link ?? null, ligacoes: g.ligacoes ?? null, rotas: g.rotas ?? null, site: g.cliques_site ?? null },
+          },
+          ind("google", "nota_media", "Nota no Google", { decimal: true, avaliacoes: g.total_avaliacoes ?? null }),
+          ind("tripadvisor", "nota", "Nota no TripAdvisor", { decimal: true, avaliacoes: atual("tripadvisor").total_avaliacoes ?? null }),
+        ].filter(Boolean),
+      };
+      const top = (m.melhores_posts || []).slice().sort((a, b) => b.interacoes - a.interacoes)[0];
+      if (top) destaque = { ...top, mes };
+      dicaInsights = ["meta", "google", "tripadvisor"].map((f) => fontes[f].recomendacao && { ...fontes[f].recomendacao, fonte: f }).find(Boolean) || null;
+    }
+
+    const hoje = hojeSP();
+    const datas = CALENDARIO.filter((d) => valeParaNicho(d, nicho.id) && d.inicio >= hoje).slice(0, 3).map((d) => {
+      const divulgarDesde = d.tipo === "Comercial" || d.tipo === "Feriado" ? somarDias(d.inicio, -DIAS_ANTECEDENCIA) : null;
+      return { ...d, divulgarDesde, divulgarAgora: Boolean(divulgarDesde && divulgarDesde <= hoje) };
+    });
+
+    const reel = itens.find((i) => i.formato === "reels");
+    const dica = dicaInsights || {
+      texto: `${s.estrategia.foco || s.estrategia.tema}${reel ? ` Comece pelo Reel de ${({ seg: "segunda", ter: "terça", qua: "quarta", qui: "quinta", sex: "sexta", sab: "sábado", dom: "domingo" })[reel.dia]}: "${reel.titulo}".` : ""}`,
+      item_id: reel?.id || null,
+      fonte: "estrategia",
+    };
+
+    res.json({
+      saudacao: { nome: u.nome, negocio: u.negocio || u.nome, nicho: { id: nicho.id, nome: nicho.nome, curto: nicho.curto, icone: nicho.icone, cor: nicho.cor } },
+      pendencias, semana, indicadores, destaque, datas, dica, hoje,
+    });
+  });
+
+  // ---------- Painel VGA: Insights ----------
+  app.get("/api/admin/insights", admin, (req, res) => {
+    const usuarioId = Number(req.query.usuario_id);
+    const mes = req.query.mes;
+    if (!db.prepare("SELECT 1 FROM usuarios WHERE id = ?").get(usuarioId)) return res.status(404).json({ erro: "Cliente não encontrado." });
+    if (!mesValido(mes)) return res.status(400).json({ erro: "Mês inválido." });
+    const fontes = Object.fromEntries(IDS_FONTES.map((f) => {
+      const atual = lerMes(db, usuarioId, f, mes);
+      const F = FONTES[f];
+      return [f, {
+        ...atual,
+        dados: atual?.dados || {},
+        textos: Object.fromEntries(F.listas.map((l) => [l.id, listaParaTexto(l, atual?.dados?.[l.id] || [])])),
+      }];
+    }));
+    res.json({
+      mes, fontes, meses: mesesComDados(db, usuarioId),
+      campos: FONTES,
+      conectores: Object.fromEntries(Object.entries(CONECTORES).map(([k, c]) => [k, { nome: c.nome, manual: Boolean(c.manual), configurado: c.configurado(), requisitos: c.requisitos }])),
+    });
+  });
+
+  app.put("/api/admin/insights", admin, json, (req, res) => {
+    const b = req.body || {};
+    const usuarioId = Number(b.usuario_id);
+    if (!db.prepare("SELECT 1 FROM usuarios WHERE id = ?").get(usuarioId)) return res.status(404).json({ erro: "Cliente não encontrado." });
+    if (!mesValido(b.mes)) return res.status(400).json({ erro: "Mês inválido (use AAAA-MM)." });
+    if (!FONTES[b.fonte]) return res.status(400).json({ erro: "Fonte inválida." });
+    const { dados, erros } = normalizarDados(b.fonte, b.dados || {});
+    if (erros.length) return res.status(400).json({ erro: erros.join(" ") });
+    if (!Object.keys(dados).length && !texto(b.nota_equipe)) {
+      apagarMes(db, usuarioId, b.fonte, b.mes);
+      return res.json({ ok: true, apagado: true });
+    }
+    salvarMes(db, { usuarioId, fonte: b.fonte, mes: b.mes, dados, origem: "manual", notaEquipe: texto(b.nota_equipe, 600), por: req.usuario.id });
+    res.json({ ok: true, dados });
+  });
+
+  app.post("/api/admin/insights/importar", admin, express.json({ limit: "2mb" }), (req, res) => {
+    const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+    if (!csv.trim()) return res.status(400).json({ erro: "Cole ou escolha um arquivo CSV." });
+    res.json(importarCSV(db, csv, { aplicar: Boolean(req.body?.aplicar), por: req.usuario.id }));
+  });
+
+  app.get("/api/admin/insights/modelo.csv", admin, (req, res) => {
+    res.type("text/csv; charset=utf-8").attachment("modelo-insights-vga.csv").send(`﻿${modeloCSV()}`);
+  });
+
+  // Equipe marca o andamento de uma pauta aprovada: agendado e publicado.
+  app.post("/api/admin/fila/status", admin, json, (req, res) => {
+    const b = req.body || {};
+    const novo = ["aprovado", "agendado", "publicado"].includes(b.status) ? b.status : null;
+    if (!novo) return res.status(400).json({ erro: "Status inválido." });
+    const e = buscarEstado.get(Number(b.usuario_id), String(b.semana || ""), String(b.item_id || ""));
+    if (!e || !travado(e.status)) return res.status(409).json({ erro: "Só dá para agendar ou publicar pautas já aprovadas pelo cliente." });
+    salvarEstado(e.usuario_id, e.semana, e.item_id, { status: novo });
+    res.json({ ok: true });
   });
 
   app.use("/api", (req, res) => res.status(404).json({ erro: "Rota não encontrada." }));

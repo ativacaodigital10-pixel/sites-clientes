@@ -87,6 +87,32 @@ export function abrirBanco(pastaDados) {
       atualizado_em TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (usuario_id, semana, item_id)
     );
+
+    -- Números do mês de cada fonte (meta, google, tripadvisor) por cliente. mes = AAAA-MM.
+    -- origem: manual (formulário), csv (planilha) ou api (Fase 2).
+    CREATE TABLE IF NOT EXISTS insights_mensais (
+      usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      fonte TEXT NOT NULL,
+      mes TEXT NOT NULL,
+      dados TEXT NOT NULL DEFAULT '{}',
+      origem TEXT NOT NULL DEFAULT 'manual',
+      nota_equipe TEXT NOT NULL DEFAULT '',
+      atualizado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+      atualizado_em TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (usuario_id, fonte, mes)
+    );
+
+    -- Fase 2: conta de cada cliente nas APIs oficiais (id do Instagram, local do Google...).
+    -- O token de acesso não fica aqui em texto aberto; ver src/insights/conectores.
+    CREATE TABLE IF NOT EXISTS conexoes_insights (
+      usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      fonte TEXT NOT NULL,
+      conta_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'manual',
+      detalhe TEXT NOT NULL DEFAULT '',
+      atualizado_em TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (usuario_id, fonte)
+    );
   `);
   return db;
 }
