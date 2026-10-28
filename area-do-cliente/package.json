@@ -1,0 +1,22 @@
+{
+  "name": "vga-area-do-cliente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VGA • Área do Cliente: estratégia de conteúdo semanal por nicho, envio de material, análise por IA e aprovação.",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env --watch server.js",
+    "atualizar-semana": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/atualizar-semana.js",
+    "criar-admin": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/criar-admin.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "express": "^5.3.0"
+  }
+}
